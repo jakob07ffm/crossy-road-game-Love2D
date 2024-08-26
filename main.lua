@@ -5,8 +5,6 @@ function love.load()
     love.graphics.setFont(font)
     state = "menu"
     highScores = loadHighScores()
-    achievements = {}
-    unlockedAchievements = {}
     resetGame()
     createSounds()
     loadBackgroundMusic()
@@ -36,7 +34,6 @@ function createSounds()
     gameOverSound = love.audio.newSource(love.sound.newSoundData(0.3, 44100, 16, 1), "static")
     levelUpSound = love.audio.newSource(love.sound.newSoundData(0.2, 44100, 16, 1), "static")
     powerUpSound = love.audio.newSource(love.sound.newSoundData(0.2, 44100, 16, 1), "static")
-    sprintSound = love.audio.newSource(love.sound.newSoundData(0.2, 44100, 16, 1), "static")
 end
 
 function loadBackgroundMusic()
@@ -46,34 +43,30 @@ function loadBackgroundMusic()
 end
 
 function resetGame()
-    player = {x = 400, y = 570, size = 30, score = 0, lives = 3, invincible = false, speed = 200, flashTimer = 0, stamina = 100, maxStamina = 100, sprinting = false}
+    player = {x = 400, y = 570, size = 30, score = 0, lives = 3, invincible = false, speed = 200, flashTimer = 0}
     lanes = {}
     createLanes()
     powerUps = {}
     hazards = {}
     addRandomPowerUp()
     addRandomHazard()
-    weather = "clear"
-    weatherTimer = 0
-    achievementsUnlocked = {}
     gameOver = false
     paused = false
     flashTimer = 0
     screenShake = 0
     level = 1
     levelTheme = "day"
-    updateAchievements()
 end
 
 function createLanes()
     for i = 1, 5 do
-        table.insert(lanes, {y = i * 100 + 50, speed = math.random(100, 300), direction = math.random(0, 1) == 0 and -1 or 1, cars = {}, carChangeTimer = 0})
+        table.insert(lanes, {y = i * 100 + 50, speed = math.random(100, 300), direction = math.random(0, 1) == 0 and -1 or 1, cars = {}})
     end
     for _, lane in pairs(lanes) do
         for j = 1, math.random(2, 4) do
             local carWidth = math.random(50, 100)
             local carX = lane.direction == 1 and math.random(-800, -100) or math.random(800, 1600)
-            table.insert(lane.cars, {x = carX, y = lane.y, width = carWidth, height = 30, color = {math.random(), math.random(), math.random()}, type = "normal"})
+            table.insert(lane.cars, {x = carX, y = lane.y, width = carWidth, height = 30, color = {math.random(), math.random(), math.random()}})
         end
     end
 end
@@ -113,8 +106,6 @@ function love.update(dt)
         checkCollisions()
         updatePowerUps(dt)
         updateHazards(dt)
-        updateWeather(dt)
-        updateAchievements()
 
         if player.y < 0 then
             levelUp()
@@ -123,20 +114,11 @@ function love.update(dt)
         if player.flashTimer > 0 then
             player.flashTimer = player.flashTimer - dt
         end
-
-        if player.sprinting then
-            player.stamina = player.stamina - 50 * dt
-            if player.stamina <= 0 then
-                player.sprinting = false
-            end
-        else
-            player.stamina = math.min(player.stamina + 20 * dt, player.maxStamina)
-        end
     end
 end
 
 function movePlayer(dt)
-    local speed = player.sprinting and player.speed * 1.5 or player.speed
+    local speed = player.speed
     if love.keyboard.isDown('up') and player.y > 0 then
         player.y = player.y - speed * dt
     end
@@ -149,25 +131,10 @@ function movePlayer(dt)
     if love.keyboard.isDown('right') and player.x < 770 then
         player.x = player.x + speed * dt
     end
-    if love.keyboard.isDown('space') and player.stamina > 0 then
-        player.sprinting = true
-        love.audio.play(sprintSound)
-    else
-        player.sprinting = false
-    end
 end
 
 function updateLanes(dt)
     for _, lane in pairs(lanes) do
-        lane.carChangeTimer = lane.carChangeTimer - dt
-        if lane.carChangeTimer <= 0 then
-            for _, car in pairs(lane.cars) do
-                if math.random() < 0.2 then
-                    car.type = car.type == "normal" and "aggressive" or "normal"
-                end
-            end
-            lane.carChangeTimer = math.random(5, 10)
-        end
         for _, car in pairs(lane.cars) do
             car.x = car.x + lane.speed * dt * lane.direction
             if lane.direction == 1 and car.x > 800 then
@@ -213,74 +180,60 @@ function updatePowerUps(dt)
 end
 
 function applyPowerUp(type)
-    if type == "shield" then
+    if type == "life" then
+        player.lives = player.lives + 1
+    elseif type == "speed" then
+        player.speed = player.speed + 50
+    elseif type == "shield" then
         player.invincible = true
         player.flashTimer = 2
-    elseif type == "boost" then
-        player.speed = player.speed * 1.5
-    elseif type == "points" then
-        player.score = player.score + 50
     end
 end
 
 function updateHazards(dt)
     for i, hazard in ipairs(hazards) do
         if checkCollision(player, hazard) then
-            if hazard.type == "pothole" then
-                player.speed = player.speed * 0.5
-            elseif hazard.type == "oil" then
-                player.speed = player.speed * 0.3
-                player.stamina = player.stamina - 20
-            end
+            applyHazardEffect(hazard.type)
             table.remove(hazards, i)
         end
     end
 end
 
-function updateWeather(dt)
-    weatherTimer = weatherTimer - dt
-    if weatherTimer <= 0 then
-        weather = math.random() < 0.5 and "clear" or (math.random() < 0.5 and "rain" or "fog")
-        weatherTimer = math.random(20, 40)
-    end
-
-    if weather == "rain" then
-        for i = 1, 10 do
-            local x = math.random(0, 800)
-            local y = math.random(0, 600)
-            love.graphics.setColor(0.7, 0.7, 1)
-            love.graphics.line(x, y, x + math.random(-10, 10), y + math.random(10, 20))
-        end
-    elseif weather == "fog" then
-        love.graphics.setColor(0.9, 0.9, 0.9, 0.5)
-        love.graphics.rectangle("fill", 0, 0, 800, 600)
+function applyHazardEffect(type)
+    if type == "pothole" then
+        player.speed = player.speed - 50
+    elseif type == "oil" then
+        player.x = player.x + math.random(-50, 50)
     end
 end
 
-function updateAchievements()
-    local achievementList = {
-        {name = "Road Runner", condition = function() return player.score >= 100 end},
-        {name = "Survivor", condition = function() return player.lives == 3 end},
-        {name = "Speed Demon", condition = function() return player.speed > 300 end},
-    }
+function addRandomPowerUp()
+    table.insert(powerUps, {x = math.random(100, 700), y = math.random(50, 550), type = "life"})
+end
 
-    for _, achievement in pairs(achievementList) do
-        if achievement.condition() and not achievementsUnlocked[achievement.name] then
-            achievementsUnlocked[achievement.name] = true
-            table.insert(achievements, achievement.name)
-        end
-    end
+function addRandomHazard()
+    table.insert(hazards, {x = math.random(100, 700), y = math.random(50, 550), type = "pothole"})
 end
 
 function levelUp()
-    level = level + 1
-    player.score = player.score + 100
+    player.score = player.score + 1
     player.y = 570
-    createLanes()
-    if level % 5 == 0 then
-        updateLevelTheme()
+    increaseDifficulty()
+    level = level + 1
+    updateLevelTheme()
+    if player.score % 5 == 0 then
+        addRandomPowerUp()
     end
+    player.invincible = false
     love.audio.play(levelUpSound)
+end
+
+function increaseDifficulty()
+    for _, lane in pairs(lanes) do
+        lane.speed = lane.speed + 20
+        local newCar = {x = lane.direction == 1 and -100 or 800, y = lane.y, width = math.random(50, 100), height = 30, color = {math.random(), math.random(), math.random()}}
+        table.insert(lane.cars, newCar)
+    end
 end
 
 function updateLevelTheme()
@@ -290,8 +243,6 @@ function updateLevelTheme()
         elseif levelTheme == "night" then
             levelTheme = "rain"
         elseif levelTheme == "rain" then
-            levelTheme = "fog"
-        elseif levelTheme == "fog" then
             levelTheme = "day"
         end
     end
@@ -376,8 +327,6 @@ function drawBackground()
         love.graphics.setColor(0.1, 0.1, 0.2)
     elseif levelTheme == "rain" then
         love.graphics.setColor(0.3, 0.4, 0.5)
-    elseif levelTheme == "fog" then
-        love.graphics.setColor(0.7, 0.7, 0.7, 0.5)
     end
     love.graphics.rectangle("fill", 0, 0, 800, 600)
 
