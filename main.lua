@@ -4,29 +4,11 @@ function love.load()
     menuFont = love.graphics.newFont(30)
     love.graphics.setFont(font)
     state = "menu"
-    highScores = loadHighScores()
+    highScores = {0, 0, 0, 0, 0}
     achievements = {}
     unlockedAchievements = {}
     resetGame()
     createSounds()
-end
-
-function loadHighScores()
-    local scores = {0, 0, 0, 0, 0}
-    return scores
-end
-
-function saveHighScores()
-end
-
-function createSounds()
-    beepSound = love.audio.newSource(love.sound.newSoundData(0.1, 44100, 16, 1), "static")
-    beepSound:setPitch(2)
-    honkSound = love.audio.newSource(love.sound.newSoundData(0.2, 44100, 16, 1), "static")
-    gameOverSound = love.audio.newSource(love.sound.newSoundData(0.3, 44100, 16, 1), "static")
-    levelUpSound = love.audio.newSource(love.sound.newSoundData(0.2, 44100, 16, 1), "static")
-    powerUpSound = love.audio.newSource(love.sound.newSoundData(0.2, 44100, 16, 1), "static")
-    sprintSound = love.audio.newSource(love.sound.newSoundData(0.2, 44100, 16, 1), "static")
 end
 
 function resetGame()
@@ -47,6 +29,15 @@ function resetGame()
     level = 1
     levelTheme = "day"
     updateAchievements()
+end
+
+function createSounds()
+    beepSound = love.audio.newSource(love.sound.newSoundData(0.1, 44100, 16, 1), "static")
+    honkSound = love.audio.newSource(love.sound.newSoundData(0.2, 44100, 16, 1), "static")
+    gameOverSound = love.audio.newSource(love.sound.newSoundData(0.3, 44100, 16, 1), "static")
+    levelUpSound = love.audio.newSource(love.sound.newSoundData(0.2, 44100, 16, 1), "static")
+    powerUpSound = love.audio.newSource(love.sound.newSoundData(0.2, 44100, 16, 1), "static")
+    sprintSound = love.audio.newSource(love.sound.newSoundData(0.2, 44100, 16, 1), "static")
 end
 
 function createLanes()
@@ -153,7 +144,7 @@ function updateLanes(dt)
             lane.carChangeTimer = math.random(5, 10)
         end
         for _, car in pairs(lane.cars) do
-            car.x = car.x + lane.speed * dt * lane.direction
+            car.x = car.x + lane.speed * dt * lane.direction * (car.type == "aggressive" and 1.2 or 1)
             if lane.direction == 1 and car.x > 800 then
                 car.x = -car.width
             elseif lane.direction == -1 and car.x < -car.width then
@@ -177,7 +168,6 @@ function checkCollisions()
                         love.audio.play(gameOverSound)
                         gameOver = true
                         table.insert(highScores, player.score)
-                        saveHighScores()
                     end
                     return
                 end
@@ -189,35 +179,32 @@ end
 function updatePowerUps(dt)
     for i, powerUp in ipairs(powerUps) do
         if checkCollision(player, powerUp) then
-            applyPowerUp(powerUp.type)
-            table.remove(powerUps, i)
+            if powerUp.type == "shield" then
+                player.invincible = true
+            elseif powerUp.type == "boost" then
+                player.speed = player.speed + 100
+            elseif powerUp.type == "points" then
+                player.score = player.score + 50
+            elseif powerUp.type == "timefreeze" then
+                for _, lane in pairs(lanes) do
+                    lane.speed = 0
+                end
+            end
             love.audio.play(powerUpSound)
+            table.remove(powerUps, i)
         end
     end
 end
 
-function applyPowerUp(type)
-    if type == "shield" then
-        player.invincible = true
-        player.flashTimer = 2
-    elseif type == "boost" then
-        player.speed = player.speed * 1.5
-    elseif type == "points" then
-        player.score = player.score + 50
-    elseif type == "timefreeze" then
-    end
-end
-
 function updateHazards(dt)
-    for i, hazard in ipairs(hazards) do
+    for _, hazard in pairs(hazards) do
         if checkCollision(player, hazard) then
             if hazard.type == "pothole" then
-                player.speed = player.speed * 0.5
+                player.speed = player.speed - 50
             elseif hazard.type == "oil" then
-                player.speed = player.speed * 0.3
-                player.stamina = player.stamina - 20
+                player.sprinting = false
+                player.speed = player.speed - 100
             end
-            table.remove(hazards, i)
         end
     end
 end
@@ -225,60 +212,19 @@ end
 function updateWeather(dt)
     weatherTimer = weatherTimer - dt
     if weatherTimer <= 0 then
-        weather = math.random() < 0.5 and "clear" or (math.random() < 0.5 and "rain" or "fog")
-        weatherTimer = math.random(20, 40)
+        local weatherTypes = {"clear", "rain", "fog", "night"}
+        weather = weatherTypes[math.random(#weatherTypes)]
+        weatherTimer = math.random(20, 60)
     end
 
     if weather == "rain" then
-        love.graphics.setColor(0.7, 0.7, 1)
-        for i = 1, 100 do
-            local x = math.random(0, 800)
-            local y = math.random(0, 600)
-            love.graphics.line(x, y, x + math.random(-5, 5), y + math.random(10, 20))
-        end
+        player.speed = player.speed - 20
     elseif weather == "fog" then
-        love.graphics.setColor(0.9, 0.9, 0.9, 0.5)
-        love.graphics.rectangle("fill", 0, 0, 800, 600)
-    end
-end
-
-function updateAchievements()
-    local achievementList = {
-        {name = "Road Runner", condition = function() return player.score >= 100 end},
-        {name = "Survivor", condition = function() return player.lives == 3 end},
-        {name = "Speed Demon", condition = function() return player.speed > 300 end},
-    }
-
-    for _, achievement in pairs(achievementList) do
-        if achievement.condition() and not achievementsUnlocked[achievement.name] then
-            achievementsUnlocked[achievement.name] = true
-            table.insert(achievements, achievement.name)
-        end
-    end
-end
-
-function levelUp()
-    level = level + 1
-    player.score = player.score + 100
-    player.y = 570
-    createLanes()
-    if level % 5 == 0 then
-        updateLevelTheme()
-    end
-    love.audio.play(levelUpSound)
-end
-
-function updateLevelTheme()
-    if level % 5 == 0 then
-        if levelTheme == "day" then
-            levelTheme = "night"
-        elseif levelTheme == "night" then
-            levelTheme = "rain"
-        elseif levelTheme == "rain" then
-            levelTheme = "fog"
-        elseif levelTheme == "fog" then
-            levelTheme = "day"
-        end
+        player.speed = player.speed - 10
+    elseif weather == "night" then
+        -- Reduce visibility
+    else
+        player.speed = player.speed + 20
     end
 end
 
@@ -299,32 +245,11 @@ function love.draw()
     end
 end
 
-function drawMenu()
-    love.graphics.setFont(menuFont)
-    love.graphics.printf("Advanced Crossy Road", 0, 150, 800, "center")
-    love.graphics.setFont(font)
-    love.graphics.printf("Press Space to Start", 0, 250, 800, "center")
-    drawHighScores()
-end
-
-function drawHighScores()
-    love.graphics.setFont(font)
-    love.graphics.printf("High Scores", 0, 350, 800, "center")
-    for i, score in ipairs(highScores) do
-        love.graphics.printf(i .. ". " .. score, 0, 350 + i * 20, 800, "center")
-    end
-end
-
 function drawGame()
     love.graphics.clear(0.1, 0.1, 0.1)
     drawBackground()
 
-    if player.flashTimer > 0 and math.floor(player.flashTimer * 10) % 2 == 0 then
-        love.graphics.setColor(1, 1, 0)
-    else
-        love.graphics.setColor(0, 1, 0)
-    end
-
+    love.graphics.setColor(player.flashTimer > 0 and {1, 1, 0} or {0, 1, 0})
     love.graphics.rectangle("fill", player.x, player.y, player.size, player.size)
 
     for _, lane in pairs(lanes) do
@@ -338,6 +263,7 @@ function drawGame()
     love.graphics.print("Score: " .. player.score, 10, 10)
     love.graphics.print("Lives: " .. player.lives, 10, 30)
     love.graphics.print("Level: " .. level .. " (" .. levelTheme .. ")", 10, 50)
+    love.graphics.print("Stamina: " .. math.floor(player.stamina), 10, 70)
 
     for _, powerUp in pairs(powerUps) do
         love.graphics.setColor(1, 1, 0)
@@ -352,49 +278,4 @@ function drawGame()
     if paused then
         love.graphics.printf("Paused", 0, 250, 800, "center")
     end
-end
-
-function drawBackground()
-    if levelTheme == "day" then
-        love.graphics.setColor(0.5, 0.8, 1)
-    elseif levelTheme == "night" then
-        love.graphics.setColor(0.1, 0.1, 0.2)
-    elseif levelTheme == "rain" then
-        love.graphics.setColor(0.3, 0.4, 0.5)
-    elseif levelTheme == "fog" then
-        love.graphics.setColor(0.7, 0.7, 0.7, 0.5)
-    end
-    love.graphics.rectangle("fill", 0, 0, 800, 600)
-
-    love.graphics.setColor(0.2, 0.2, 0.2)
-    love.graphics.rectangle("fill", 0, 50, 800, 500)
-
-    love.graphics.setColor(0.4, 0.4, 0.4)
-    for i = 0, 4 do
-        love.graphics.rectangle("fill", 0, 50 + i * 100, 800, 5)
-    end
-end
-
-function drawGameOver()
-    love.graphics.printf("Game Over! Score: " .. player.score, 0, 250, 800, "center")
-    love.graphics.printf("Press Space to Restart", 0, 300, 800, "center")
-end
-
-function checkCollision(a, b)
-    return a.x < b.x + (b.width or 30) and
-           a.x + a.size > b.x and
-           a.y < b.y + (b.height or 30) and
-           a.y + a.size > b.y
-end
-
-function addRandomPowerUp()
-    local types = {"shield", "boost", "points", "timefreeze"}
-    local type = types[math.random(#types)]
-    table.insert(powerUps, {x = math.random(30, 770), y = math.random(100, 570), type = type})
-end
-
-function addRandomHazard()
-    local types = {"pothole", "oil"}
-    local type = types[math.random(#types)]
-    table.insert(hazards, {x = math.random(30, 770), y = math.random(100, 570), type = type})
 end
