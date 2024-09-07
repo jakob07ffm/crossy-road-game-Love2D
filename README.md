@@ -23,3 +23,4 @@ This is a simple "Crossy Road" clone implemented using the LÖVE framework (Love
      ```
      love <path_to_folder>
      ```
+![](el.JPG)
